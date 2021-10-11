@@ -1,0 +1,185 @@
+{% extends "base.html" %} 
+
+{% block content %}
+<div class="container blog bg-light p-5 mt-5 rounded">
+    <div class="row">
+        <div class="col-3 text-center">
+            <a class="mugshot-container mb-1" href="{% url 'profile' question.author.pk %}">
+                {% if question.author.profile.image %}
+                <div class="mugshot-img mb-2" style="background-image:url({{ question.author.profile.image.url }})"></div>
+                {% endif %}
+                <span>{{ question.author.username }}</span>
+            </a>
+            <small class="text-muted">{{ question.published|date:"d/m/Y h:i a" }}</small>
+        </div>
+        <div class="col-9 question-information pb-1">
+            <div class="question">
+                <div class="question-mark">
+                    <span>Q:</span>
+                </div>
+                <div class="question-content">
+                    <h3 class="mb-0">{{ question.title }}</h3>
+                </div>
+            </div>
+            {% if request.user == question.author %}
+            <div class="pl-2">
+                <a class="btn btn-sm btn-danger" href="{% url 'advice:delete' question.pk %}">Delete</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="row mt-5">
+        <div class="col-12">
+            <div class="question-detail-container">
+                <div class="answers-container">
+                    <span id="answer-above"></span>
+                    <p class="loading-comment animate text-center">loading advices...</p>
+                    {% if request.user.is_authenticated %}
+                    <form class="post-answer-form">
+                        <div class="form-group">
+                            <label for="answer" class="answer-heading">Post an advice</label>
+                            <textarea class="form-control advice-form mb-2" name="answer" id="answer" rows="5"></textarea>
+                            <button class="btn btn-primary" type="submit" id="post-comment">Submit</button>
+                        </div>
+                        <p class="text-danger font-weight-bold" id="form-error"></p>
+                    </form>
+                    {% else %}
+                    <p class="answer-heading"><a href="{% url 'login' %}">Login</a> to post an
+                    advice</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock content %}
+
+{% block js %}
+<script>
+// ready ensures code runs after the document has been fully loaded
+$(document).ready(function() {
+    // This function runs once and fetches the advices of this specific question.
+    function fetchAdvicesUpdateUI() {
+        // Fetching Data from our own REST API
+        // the fetch() func is used to make HTTP requests
+        fetch("/questions/api/{{question.id}}")
+        // returns a response thro' which we get our JSON data
+        .then(res => res.json())
+        // use the returned data to display advice on the page
+        .then(data => {
+            let answers = []
+            // Loop over the data returned from the api.
+            for(var i = 0; i < data.length; i++) {
+                // Constructing the markup from the data returned from API.
+                var answer = [
+                    "<div class='answer'><div class='answer-by'>",
+                    "<a class='mugshot-container mb-1' href='",
+                    data[i].user_url,
+                    "'> <div class='mugshot-img-sm mb-2' style='background-image:url(",
+                    data[i].user_image,
+                    ")'></div><span>",
+                    data[i].username,
+                    "</span></a> <small class='text-muted'>",
+                    data[i].date_published,
+                    "</small></div><div class='answer-content'> <p>",
+                    data[i].content,
+                    "</p></div></div>"
+                ]
+                answers.push(answer.join(""))
+            }
+            if( answers.length < 1) {
+                answers = ['<p class="no-answer">No answers posted to this thread yet!</p>']
+            } else {
+                answers.unshift('<h3 class="answer-heading" id="answer-here">Answers:</h3>')
+            }
+            // Loop over the advices array and push it to our html document.
+            for(var i = 0; i < answers.length; i++) {
+                $("#answer-above").before(answers[i])
+            }
+            // Hide the loading advices message.
+            $(".loading-comment").css("display", "none")
+        })
+    }
+    // Load the advices once on page was loaded.
+    fetchAdvicesUpdateUI()
+
+    // Code for creating and submitting advice to a question.
+    // Whenever form is submitted, execute following method.
+    $(".post-answer-form").on("submit", function (e) {
+        // prevents the default behavior of the submit button
+        e.preventDefault()
+        // Pass the content from the input box
+        postAdvice($('.advice-form').val())
+    })
+    function postAdvice(content) {
+        // Check if answer was empty and return if true.
+        if (content.length === 0) {
+            $("#form-error").text("Can't be empty!")
+            $("#form-error").css("display", "block")
+            return;
+        }
+        $("#form-error").css("display", "none")
+        // Hide button interaction
+        $("#post-comment").text("Wait...").attr('disabled', true);
+        // Construct data to send to our REST API
+        var mydata = {
+            'content': content,
+        };
+        // Insert question-id and user-token for the POST request.
+        fetch('/questions/api/{{question.id}}/create', {
+            // sends a POST request to the api path above
+            method: 'POST',
+            headers: {
+                // tells the backend that the body will be of type JSON
+                'Content-Type': 'application/json',
+                // Get the csrf token and attach to our request
+                'X-CSRFTOKEN': Cookies.get('csrftoken')
+            },
+            // data we want to send to api after converting to json string
+            body: JSON.stringify(mydata)
+        })
+        // API returns the newly created Advice instance
+        .then(res => res.json())
+        .then(data => {
+            // Constructing markup in array from data received.
+            var answer = [
+                "<div class='answer new-answer'><div class='answer-by'>",
+                "<a class='mugshot-container mb-1' href='",
+                data.user_url,
+                "'> <div class='mugshot-img-sm mb-2' style='background-image:url(",
+                data.user_image,
+                ")'></div><span>",
+                data.username,
+                "</span></a> <small class='text-muted'>",
+                data.date_published,
+                "</small></div><div class='answer-content'> <p>",
+                data.content,
+                "</p></div></div>"
+            ]
+            // If answers exist, post before the latest answer (at the top).
+            if ($(".answer").length > 0) {
+                $("#answer-here").after(answer.join(''));
+            } else {
+                // If this is the first anser, this will be posted before the identifier.
+                $("#answer-above").after('<h3 class="answer-heading" id="answer-here">Answers:</h3>')
+                $("#answer-here").after(answer.join(''))
+                $(".no-answer").css("display", "none")
+            }
+            // Updating button to 'clickable' and changing text back to "Submit".
+            $("#post-comment").text("Submit").attr('disabled', false);
+            // Clear the input field.
+            $('.advice-form').val("");
+            // Scroll to answer we just saved and the api returned.
+            $("html, body").animate({
+                scrollTop: $("#answer-here").offset().top
+            }, 500);
+            // Unfocus the submit button.
+            $("#post-comment").blur();
+        })
+        .catch(err => console.log(err))
+    }
+})
+</script>
+{% endblock js %}
+
